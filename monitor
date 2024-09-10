@@ -1,0 +1,17 @@
+#!/bin/bash
+ 
+if [ $# -eq 0 ]; then
+	python3 show_smi.py
+else
+	python3 show_smi.py $@ &
+	PID1=$!
+	 
+	while true; do
+	    read -s -n 1 key 
+	    if [ "$key" = "q" ]; then
+	         kill -9 $PID1
+		 break
+	    fi
+	    echo $key
+	done
+fi
