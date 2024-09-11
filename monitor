@@ -12,6 +12,5 @@ else
 	         kill -9 $PID1
 		 break
 	    fi
-	    echo $key
 	done
 fi
