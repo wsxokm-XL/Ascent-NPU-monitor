@@ -1,31 +1,17 @@
 from time import sleep,time,localtime,strftime
-import sys
+from sys import argv
 from configparser import ConfigParser
-import subprocess
+from subprocess import check_output
 from prettytable import PrettyTable
 
-npu_num = 8
-length = 30
-threshold1 = 20
-threshold2 = 70
-
 config = ConfigParser()
-file_name = 'config.ini'
-config.read(file_name, 'utf-8')
+config.read('config.ini', 'utf-8')
 
-sections = config.sections()
-if len(sections) > 0:
-	for i in sections:
-		for j in config.options(i):
-			arg_init = config[i][j]
-			if arg_init == "npu_num":
-				npu_num = int(arg_init)
-			elif arg_init == "chart_his_max_length":
-				length = int(arg_init)
-			elif arg_init == "use_threshold1":
-				threshold1 = int(arg_init)
-			elif arg_init == "use_threshold1":
-				threshold2 = int(arg_init)
+npu_num = config.getint('DEFAULT', 'npu_num', fallback=8)
+length = config.getint('DEFAULT', 'chart_his_max_length', fallback=30)
+threshold1 = config.getint('DEFAULT', 'threshold1', fallback=20)
+threshold2 = config.getint('DEFAULT', 'threshold2', fallback=70)
+
 
 class Npu():
 	def __init__(self, id):
@@ -63,19 +49,21 @@ class Npu():
 		self.cpu_use = 0.0
 		self.health = "UNKNOWN"
 
+
+COLORS = {
+	"red": "\033[1;31m",
+	"green": "\033[1;32m",
+	"yellow": "\033[1;33m",
+	"blue": "\033[1;34m",
+	"white": "\033[1;37m",
+	"reset": "\033[0m"
+}
+
+
 def color_str(strings, color):
 	strings = str(strings)
-	if color == "red":
-		strings = "\033[1;31m" + strings + "\033[0m"
-	elif color == "green":
-		strings = "\033[1;32m" + strings + "\033[0m"
-	elif color == "yellow":
-		strings = "\033[1;33m" + strings + "\033[0m"
-	elif color == "blue":
-		strings = "\033[1;34m" + strings + "\033[0m"
-	elif color == "white":
-		strings = "\033[1;37m" + strings + "\033[0m"
-	return strings
+	return f"{COLORS[color]}{strings}{COLORS['reset']}"
+
 
 def His(name,value):
 	per = str(round(value,1))
@@ -84,6 +72,7 @@ def His(name,value):
 	his = name + ": " + "\u2588" * len1 + " " * len2 + per + "%"
 	return his
 
+
 def Threshold(value):
 	if value <= threshold1:
 		return "green"
@@ -91,6 +80,7 @@ def Threshold(value):
 		return "yellow"
 	else :
 		return "red"
+
 
 def color_row(npu_x):
 	color_mem = Threshold(npu_x.memory_use_percent * 100)
@@ -104,29 +94,41 @@ def color_row(npu_x):
 		color_health = "red"
 
 	HBM = str(npu_x.memory_use) + ' / ' + str(npu_x.max_memory)
+    
+	color_use = "green"
 	if color_mem == "red" or color_utl == "red":
-		return [color_str(npu_x.id,"red"), color_str(npu_x.temp,"red"), color_str(npu_x.power,"red"), color_str(HBM,"red"), color_str(str(npu_x.ai_core)+"%","red"), color_str(npu_x.health,color_health),color_str(His("MEM",npu_x.memory_use_percent*100),color_mem),color_str(His("UTL",utl),color_utl)]
+		color_use = "red"
 	elif color_mem == "yellow" or color_utl == "yellow":
-		return [color_str(npu_x.id,"yellow"), color_str(npu_x.temp,"yellow"), color_str(npu_x.power,"yellow"), color_str(HBM,"yellow"), color_str(str(npu_x.ai_core)+"%","yellow"), color_str(npu_x.health,color_health),color_str(His("MEM",npu_x.memory_use_percent*100),color_mem),color_str(His("UTL",utl),color_utl)]
+		color_use = "yellow"
 	else :
-		return [color_str(npu_x.id,"green"), color_str(npu_x.temp,"green"), color_str(npu_x.power,"green"), color_str(HBM,"green"), color_str(str(npu_x.ai_core)+"%","green"), color_str(npu_x.health,color_health),color_str(His("MEM",npu_x.memory_use_percent*100),color_mem),color_str(His("UTL",utl),color_utl)]
+		pass
+
+	return [color_str(npu_x.id,color_use), color_str(npu_x.temp,color_use), color_str(npu_x.power,color_use), color_str(HBM,color_use), color_str(str(npu_x.ai_core)+"%",color_use), color_str(npu_x.health,color_health),color_str(His("MEM",npu_x.memory_use_percent*100),color_mem),color_str(His("UTL",utl),color_utl)]
+
+
 
 def get_smi(is_watch,args):
-	table = PrettyTable()
-
 	timestamp = time()
-	output = subprocess.check_output(['npu-smi','info'])
+	npu_avg.avg_init()
+
+	try:
+		output = check_output(['npu-smi','info'])
+	except Exception as e:
+		print(f"Error executing npu-smi info: \n{e}")
+		return False
+
 	out = output.decode('utf-8')
 	re = out.split('\n|')
 
-	version = re[1].split('|')
-	version = version[0].split(' ')
-	version = version[2]
+	if "npu" in str(table.title):
+		table.clear_rows()
+	else:
+		version = re[1].split('|')
+		version = version[0].split(' ')
+		version = version[2]
 
-	npu_avg.avg_init()
-
-	table.title = "npu-smi " + version
-	table.field_names = ['NPU','Temp(C)','Pow(W)',' HBM-Usage(MB) ','NPU-Util',' Health ',"Memory Utilization","NPU Utilization"]
+		table.title = "npu-smi " + version
+		table.field_names = ['NPU','Temp(C)','Pow(W)',' HBM-Usage(MB) ','NPU-Util',' Health ',"Memory Utilization","NPU Utilization"]
 
 	for i in range(4,npu_num*2+4,2):
 		tem = re[i].split('|')
@@ -174,34 +176,21 @@ def get_smi(is_watch,args):
 	npu_avg.health = "OK"
 	table.add_row(color_row(npu_avg))
 	print(table)
+	return True
+
+
+npu_avg = Npu("AVG")
+npu_mapping = { i: Npu(i) for i in range(npu_num)}
+table = PrettyTable()
+
 
 if __name__ == '__main__':
-	npu0 = Npu(0)
-	npu1 = Npu(1)
-	npu2 = Npu(2)
-	npu3 = Npu(3)
-	npu4 = Npu(4)
-	npu5 = Npu(5)
-	npu6 = Npu(6)
-	npu7 = Npu(7)
-	npu_avg = Npu("AVG")
+	args = argv
 
-	npu_mapping = {
-		0: npu0,
-		1: npu1,
-		2: npu2,
-		3: npu3,
-		4: npu4,
-		5: npu5,
-		6: npu6,
-		7: npu7,
-	}
-
-	args = sys.argv
-
-	if args.count("watch") >= 1:
-		while True:
-			get_smi("watch",args)
+	if "watch" in args:
+		executing = True
+		while executing:
+			executing = get_smi("watch",args)
 			sleep(1)
 	else:
 		get_smi("silence",args)
